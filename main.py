@@ -9,10 +9,11 @@ import torch.optim as optim
 import wandb
 from dpipe.io import load
 from torch.utils import data
-from configs import *
+from utils.configs import *
 from data.datasets.cc359_dataset import CC359Ds
 from data. datasets.msm_dataset import MultiSiteMri
 from utils.unet import UNet2D
+from utils.paths import *
 from utils import load_model
 from train_modes.pretrain import pretrain
 from train_modes.pseudo_labeling import pseudo_labels_iterations
@@ -49,6 +50,7 @@ def get_arguments():
     parser.add_argument("--target_model_path", type=str, default='')
     parser.add_argument("--pl_iterations", type=int, default=10)
     parser.add_argument("--pl_epochs", type=int, default=100)
+    parser.add_argument("--pl_alpha", type=int, default=-1)
 
     return parser.parse_args()
 
@@ -59,7 +61,7 @@ def get_configuration(args):
             config = MsmPretrainConfig()
         else:
             args.source = args.target
-            config = MsmConfigFinetuneClustering()
+            config = MsmConfigPLPP()
 
     else:
         if 'debug' in args.exp_name:
@@ -67,7 +69,7 @@ def get_configuration(args):
         elif args.mode == 'pretrain':
             config = CC359ConfigPretrain()
         else:
-            config = CC359ConfigFinetuneClustering()
+            config = CC359ConfigPLPP()
     return config
 
 
@@ -148,8 +150,7 @@ def main():
 
     if args.mode == "PLPP":
         config.exp_dir = Path(config.base_res_path) / f'source_{args.source}_target_{args.target}' / args.mode
-        state_dict_path = Path(
-            config.base_res_path) / f'source_{args.source}_target_{args.target}' / 'clustering_finetune' / 'best_model.pth'
+        state_dict_path = Path(config.base_res_path) / f'source_{args.source}_target_{args.target}' / 'finetune' / 'best_model.pth'
         model = load_model(model, state_dict_path, config.msm)
     else:
         if args.exp_name != '':
@@ -178,10 +179,9 @@ def main():
                                    num_workers=args.num_workers, pin_memory=True, drop_last=config.drop_last)
 
     if args.mode == 'pretrain':
-        pretrain(model, optimizer, scheduler, trainloader, config, args)
+        pretrain(model, optimizer, scheduler, trainloader , targetloader, val_ds, test_ds, val_ds_source, config, args)
     else:
-        model_path = ckpt_path
-        pseudo_labels_iterations(ckpt_path, trainloader, targetloader, val_ds, test_ds, val_ds_source, args, config)
+        pseudo_labels_iterations(model, optimizer, trainloader, targetloader, val_ds, test_ds, val_ds_source, args, config)
 
 
 if __name__ == '__main__':
